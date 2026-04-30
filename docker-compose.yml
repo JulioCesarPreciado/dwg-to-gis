@@ -1,0 +1,22 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: dwg_postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       dwg
+      POSTGRES_USER:     dwg
+      POSTGRES_PASSWORD: dwg_pass
+    ports:
+      - "5433:5432"   # 5433 en host para no chocar con PostgreSQL local
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro  # esquema inicial
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dwg -d dwg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgis_data:

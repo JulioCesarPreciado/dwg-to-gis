@@ -1,0 +1,42 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Datos — no subir archivos de clientes
+data/*.dwg
+data/*.dxf
+data/*.DWG
+data/*.DXF
+data/dxf/*.dxf
+data/dxf/*.DXF
+data/samples/*.dwg
+data/samples/*.dxf
+
+# Outputs generados
+*_inventario.json
+*_inventario.csv
+*.geojson
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+
+# Base de datos local
+*.db
+*.sqlite
+
+# macOS
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
