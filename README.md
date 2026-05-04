@@ -99,6 +99,15 @@ python src/pg_import.py data/dxf/plano.dxf \
   --capas-texto "TX . 01" "ÁREAS"
 ```
 
+### Ver recintos importados sobre el plano
+
+```bash
+python src/recintos_viewer.py
+```
+
+Abre `http://127.0.0.1:8765/`. El visor lee `dwg.recintos` y `dwg.entidades`
+desde PostGIS para comparar los polígonos detectados contra las geometrías del DXF.
+
 ### Gestionar inventario en SQLite (sin PostGIS)
 
 ```bash
