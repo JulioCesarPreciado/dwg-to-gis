@@ -1,211 +1,170 @@
-# Normas de homologación DWG para inventario de superficies
+# Guía de entrega de planos DWG — dwg-to-gis
 
-Guía para que el script `inventario_superficies.py` funcione correctamente con planos de distintos despachos.
+Guía para arquitectos y dibujantes sobre cómo preparar un plano DWG para que el sistema detecte automáticamente habitaciones, locales y recintos con la mayor precisión posible.
 
 ---
 
-## Qué tipo de plano debe entregarse
+## Cómo funciona la detección automática
 
-Solo se procesan **plantas arquitectónicas de distribución de espacios interiores**.  
-La condición mínima es que el plano contenga simultáneamente:
+El sistema intenta detectar recintos con tres estrategias en orden de precisión:
 
-1. **Polilíneas cerradas** que delimiten cada recinto (`LWPOLYLINE` o `POLYLINE` con flag `Closed = Yes`)
-2. **Etiquetas de texto** con el nombre del espacio dentro o cerca de cada recinto (`TEXT` o `MTEXT`)
-
-Si falta cualquiera de los dos, el plano no es procesable.
-
-| Tipo de plano | ¿Procesable? | Motivo |
+| Estrategia | Confianza | Qué necesita |
 |---|---|---|
-| Planta baja / alta / sótano con locales numerados | ✅ Sí | Polilíneas de recinto + etiquetas en capas reconocidas |
-| Planta SIAPA (con giros y aforos) | ✅ Sí | Igual que arriba + datos de uso por local |
-| Planta de sótano con cajones de estacionamiento | ✅ Sí | Si los cajones tienen polilínea cerrada y etiqueta |
-| Planta de conjunto / sitio | ❌ No | Sin polilíneas de recinto individuales por local |
-| Planta de azoteas | ❌ No | Sin recintos cerrados; solo anotaciones de pendiente y drenes |
-| Levantamiento topográfico (UTM, curvas de nivel) | ❌ No | Sin espacios arquitectónicos |
-| Fachada / alzado / corte | ❌ No | Sin recintos en planta |
-| Plano de instalaciones (eléctrico, hidráulico, etc.) | ❌ No | Polilíneas son de recorrido, no de recintos |
+| **S1 — Polilíneas cerradas** | 🟢 Alta | Cada recinto dibujado como una polilínea cerrada con su etiqueta dentro |
+| **S2 — Red de muros** | 🟡 Media | Muros como líneas continuas que se unen en esquinas, en una capa nombrada |
+| **S3 — Ray-casting** | 🔴 Baja (área aproximada) | Cualquier geometría; el sistema estima el área por proyección de rayos |
+
+**La mejor calidad se logra con S1.** S2 y S3 son fallback automático para planos que no siguen S1.
 
 ---
 
-## Capas requeridas (por despacho / convención)
+## Opción 1 (recomendada): Polilíneas cerradas por recinto
 
-El script reconoce las capas de los despachos validados. Si el plano viene de otro despacho, el dibujante **debe usar una de estas convenciones** o coordinar para añadir la nueva capa al script.
+Cada habitación o local debe estar dibujado como **una sola polilínea cerrada** (`LWPOLYLINE` o `POLYLINE` con `Closed = Yes`) que trace exactamente el perímetro del espacio.
 
-| Convención | Capa de etiquetas de espacio | Capa de polilíneas de recinto | Despacho validado |
-|---|---|---|---|
-| AIA / NCS | `A-AREA-IDEN` | `A-AREA-BNDY` | BOR-10x ✅ |
-| D'L | `TX . 01` | Varias (`MC`, `EJ`, `P1`, etc.) + 3DFACE | D'L ✅ |
-| Universal nueva | `A-SPACE-LABEL` | `A-SPACE-BNDY` | (recomendado para nuevos proyectos) |
+La **etiqueta de nombre** (`TEXT` o `MTEXT`) debe estar **dentro** de esa polilínea.
 
-Para añadir un nuevo despacho: editar `CAPAS_TEXTO` y `CAPAS_BNDY` en el script (`inventario_superficies.py`, líneas ~30-40).
-
----
-
-## Por qué fallan planos que "parecen correctos"
-
-Estos son los problemas encontrados en los planos de prueba que no funcionaron:
-
-### A. Contenido dentro de XREFs no explotados
-**Planos afectados:** ARQ-01, ARQ-02, ARQ-03  
-El archivo DWG contiene solo un bloque `INSERT` que apunta a un archivo externo (XREF). Al convertir a DXF, el contenido del XREF no se incrusta — el archivo queda prácticamente vacío.
-
-✅ **Solución:** Antes de entregar, ejecutar en AutoCAD:  
-`XREF → Bind → Bind (no Insert)` o `_XBIND` para incrustar todas las referencias externas.  
-Verificar con `XREF Manager` que no quede ningún XREF pendiente.
-
----
-
-### B. Polilíneas de recinto en capas incorrectas
-**Planos afectados:** MO-Plano (A-101, A-102, A-103), La Riioja Final, PROYECTO VALDEPENAS, KIVA-LA VENTA  
-El plano tiene texto con nombres de espacios en la capa correcta (`A-AREA-IDEN` en el caso de MO) pero las polilíneas están en capas de muro (`A-WALL`) o mobiliario, no en la capa de recintos (`A-AREA-BNDY`).
-
-| Plano | Tiene etiquetas | Tiene polilíneas | Capa de polilíneas real | Problema |
-|---|---|---|---|---|
-| MO-A-101 | ✅ `A-AREA-IDEN` (34) | ✅ `A-WALL` (6) | `A-WALL` | Capa equivocada |
-| MO-A-102 | ✅ `A-AREA-IDEN` (32) | ❌ ninguna | — | Sin polilíneas |
-| La Riioja | ❌ sin capa reconocida | ✅ `MOBILIARIO FIJO`, `MACHUELO` | Mobiliario/muros | Ambas capas equivocadas |
-| KIVA | ❌ sin capa reconocida | ✅ `DWG-ESPACO-BALIZAMIENTO` | Convención propia | Capa desconocida |
-
-✅ **Solución:** Dibujar o mover las polilíneas de cada recinto a la capa `A-AREA-BNDY`.  
-Una polilínea en `A-AREA-BNDY` debe corresponder **exactamente** a un espacio: local, terraza, pasillo, baño, etc.  
-Las polilíneas de muros, ejes, mobiliario y otros elementos **no deben** estar en `A-AREA-BNDY`.
-
----
-
-### C. Etiquetas en capas no reconocidas
-**Planos afectados:** La Riioja Final, PROYECTO VALDEPENAS, KIVA-LA VENTA  
-Los nombres de espacios están en capas como `A-NOTE-100`, `Txt`, `Carga`, `DWG-TREX-TEXTOS` que el script no lee.
-
-✅ **Solución:** Mover las etiquetas de nombre de espacio a la capa `A-AREA-IDEN` (o `TX . 01` si se usa la convención D'L).  
-Las anotaciones de área, pendientes, cotas y notas constructivas deben ir en otras capas.
-
----
-
-### D. Tipo de plano incorrecto
-**Planos afectados:** BOR-100 (conjunto), BOR-103 (azoteas), LEV UTM (topográfico)  
-No son plantas de distribución de espacios. No tienen los dos ingredientes base (polilíneas de recinto + etiquetas).
-
-✅ **Solución:** No enviar este tipo de planos al proceso. Solo plantas de distribución arquitectónica.
-
----
-
-## Reglas de dibujo para el dibujante
-
-### 1. Una entidad de texto por espacio — no partir etiquetas
-
-❌ Mal — 4 entidades TEXT separadas:
 ```
-ELEVADOR PARA   |   PERSONAS CON   |   CAPACIDADES   |   DIFERENTES
+┌─────────────────┐
+│                 │
+│   HABITACIÓN    │  ← TEXT o MTEXT dentro de la polilínea
+│      101        │
+│                 │
+└─────────────────┘
+  ↑ LWPOLYLINE cerrada, capa: cualquiera
 ```
 
-✅ Bien — un solo MTEXT o TEXT completo:
-```
-VENTILACION MECANICA     (una sola entidad MTEXT en capa A-AREA-IDEN)
-```
+### Checklist para Opción 1
+
+- [ ] Cada recinto es una polilínea cerrada (propiedad `Closed = Yes`)
+- [ ] La etiqueta de nombre está **dentro** del polígono, no sobre el borde
+- [ ] La etiqueta es una sola entidad `TEXT` o `MTEXT` (no partir el nombre en varias líneas)
+- [ ] Las etiquetas de nombre están en una de las capas de texto reconocidas (ver tabla abajo)
 
 ---
 
-### 2. La etiqueta debe estar **dentro** de la polilínea del recinto
+## Opción 2 (aceptable): Muros como líneas
 
-El script hace *point-in-polygon* primero (`[✓]` — máxima confianza).  
-Si la etiqueta está fuera, cae a búsqueda por distancia (`[?]` — radio máx. 15 m, menos confiable).
+Si los muros están dibujados como **líneas individuales** (`LINE`), el sistema los une automáticamente para reconstruir los recintos, siempre que:
 
-✅ Colocar el texto en el centroide visual del espacio, nunca sobre el borde del muro.
+- Las líneas se toquen en los extremos (sin huecos visibles en esquinas)
+- Todos los muros estén en **una sola capa** con un nombre descriptivo (ver tabla abajo)
+- Cada recinto tenga su etiqueta de texto dentro del área correspondiente
 
----
+### Tolerancia de cierre de esquinas
 
-### 3. La polilínea de cada recinto debe estar cerrada (`CLOSED = 1`)
-
-Sin el flag `closed`, el script usa tolerancia geométrica (primer ≈ último punto < 5 cm). Funciona, pero es frágil.
-
-✅ Usar siempre `PLINE` → `Cerrar` o activar `Closed = Yes` en el inspector de propiedades.
+El sistema acepta huecos de hasta **35 cm** en los extremos de líneas. Huecos mayores rompen la detección del recinto y éste cae a S3 (ray-casting).
 
 ---
 
-### 4. Separar nombre del espacio de anotación de área
+## Capas reconocidas
 
-❌ Mal — nombre y área en un solo texto:
-```
-LOCAL 101 — 96.25 m²
-```
+### Capas de texto (etiquetas de espacios)
 
-✅ Bien — dos entidades distintas en `A-AREA-IDEN`:
-```
-LOCAL 101        (etiqueta)
-96.25 m²         (anotación — el script la ignora automáticamente)
-```
-
----
-
-### 5. No mezclar anotaciones constructivas con etiquetas de espacio
-
-| Contenido | Capa correcta |
+| Convención | Capas que debe usar |
 |---|---|
-| Nombres de espacios (`LOCAL 101`, `TERRAZA 201`, `BAÑO H`) | `A-AREA-IDEN` |
-| Anotaciones de área (`96.25 m²`) | `A-AREA-IDEN` (filtradas automáticamente) |
-| Polilíneas de recintos | `A-AREA-BNDY` |
-| Indicaciones constructivas (`SUBE`, `BAJA`, `PROYECCIÓN`, `PENDIENTE`) | `G-ANNO-TEXT` |
-| Ejes de referencia (`X`, `Y-1`, `Y-4`) | `A-GRID` |
-| Muros, trabes, columnas | `A-WALL`, `A-COLS`, etc. |
-| Mobiliario | `A-FURN` o `MOBILIARIO` |
+| D'L / Universal | `TX . 01`, `TX`, `Ar-Texto`, `T B`, `ÁREAS` |
+| BOR-10x | `A-AREA-IDEN`, `G-ANNO-TEXT` |
+| AIA/NCS | `A-AREA`, `Q-SPCQ`, `A-ANNO-NOTE` |
+
+Si el plano viene de otra oficina con capas distintas, indicarlo al entregar el archivo para que se configure el sistema.
+
+### Capas de muros (para Opción 2)
+
+El sistema reconoce automáticamente capas cuyos nombres contengan:
+
+`muro`, `muros`, `pared`, `paredes`, `wall`, `walls`, `tabique`, `cerramiento`, `partition`
+
+También acepta cualquier nombre en inglés equivalente. Si la capa de muros no se detecta automáticamente, indicar el nombre exacto al momento de importar.
 
 ---
 
-### 6. No usar XREFs — incrustar todo antes de entregar
+## Reglas de dibujo
 
-Si el plano usa archivos de referencia externa (XREF), el contenido no estará disponible en el DXF resultante.
+### 1. No partir etiquetas en varias entidades de texto
 
-✅ En AutoCAD antes de guardar:  
-`Insertar → Referencia externa → clic derecho → Bind → Bind`  
-Confirmar que `XREF Manager` muestre "Sin referencias externas".
+❌ Mal — 3 entidades TEXT separadas:
+```
+SALA    DE    ESTAR
+```
 
----
-
-## Checklist de entrega
-
-Antes de entregar un plano para procesamiento, verificar:
-
-- [ ] Es una planta de distribución arquitectónica (no conjunto, azotea, alzado, topografía)
-- [ ] No tiene XREFs pendientes (todo incrustado / bound)
-- [ ] Cada recinto tiene una polilínea cerrada en la capa `A-AREA-BNDY`
-- [ ] Cada recinto tiene una etiqueta de nombre en la capa `A-AREA-IDEN`
-- [ ] La etiqueta está dentro de la polilínea correspondiente
-- [ ] El nombre del espacio es una sola entidad TEXT o MTEXT (no partido en varias)
-- [ ] Las anotaciones de área, cotas y notas están en capas distintas a `A-AREA-IDEN`
+✅ Bien — una sola entidad TEXT o MTEXT:
+```
+SALA DE ESTAR
+```
 
 ---
 
-## Sistema de confianza del script
+### 2. La etiqueta debe estar dentro del recinto
 
-| Símbolo | Método | Confianza |
+El sistema asigna el texto al recinto que lo contiene (point-in-polygon). Si el texto está fuera, se usa ray-casting como aproximación y el área puede ser incorrecta.
+
+✅ Colocar el texto en el centro visual del espacio, sin que toque el borde del muro.
+
+---
+
+### 3. No mezclar anotaciones con etiquetas de nombre
+
+| Contenido | Capa |
+|---|---|
+| Nombre del espacio (`HABITACIÓN 101`, `LOCAL COMERCIAL`) | Capa de texto reconocida (p.ej. `TX . 01`) |
+| Área numérica (`96.25 m²`) | Puede ir en la misma capa — el sistema la ignora automáticamente |
+| Cotas, pendientes, notas constructivas (`SUBE`, `BAJA`, `NPT`) | Otras capas (p.ej. `COTAS`, `NOTAS`) |
+| Ejes de referencia (`A`, `B`, `1`, `1-1`) | Capa de ejes (p.ej. `EJES`) |
+
+---
+
+### 4. No usar XREFs — incrustar todo antes de entregar
+
+Si el plano usa **referencias externas (XREF)**, el contenido no estará disponible al convertir a DXF.
+
+✅ En AutoCAD antes de guardar:
+`Insertar → Referencia externa → clic derecho → Bind → Bind (no Insertar)`
+Confirmar en el XREF Manager que no quede ninguna referencia pendiente.
+
+---
+
+### 5. Planos con múltiples vistas en una hoja
+
+Si la hoja contiene varias plantas (p.ej. Nivel 1 + Nivel 2 + Corte) lado a lado:
+
+- Mantener las plantas **bien separadas horizontalmente** (mínimo 1 m de espacio entre ellas)
+- Las etiquetas de cada planta deben estar dentro del área de esa planta
+- El sistema detecta automáticamente los grupos de vistas para evitar que los rayos de una planta crucen a otra
+
+---
+
+## Tipos de plano procesables
+
+| Tipo de plano | ¿Procesable? | Notas |
 |---|---|---|
-| `[✓]` | Polilínea cerrada que contiene el punto del texto | Alta |
-| `[~]` | Área acumulada de superficies 3DFACE (planos 3D) | Media |
-| `[?]` | Polilínea más cercana dentro de 15 m de radio | Baja |
-| `[–]` | Sin geometría asociada encontrada | Sin área |
+| Planta arquitectónica de distribución | ✅ Sí | Recintos + etiquetas |
+| Planta de estacionamiento con cajones numerados | ✅ Sí | Si cada cajón tiene polilínea cerrada + etiqueta |
+| Planta de conjunto / sitio | ⚠️ Parcial | Solo si los lotes tienen polilíneas + etiquetas |
+| Planta de azotea (solo cubiertas) | ❌ No | Sin recintos habitables |
+| Fachada / alzado / corte transversal | ❌ No | Sin plantas en planta |
+| Topográfico / levantamiento UTM | ❌ No | Sin espacios arquitectónicos |
+| Plano de instalaciones (eléctrico, hidráulico) | ❌ No | Polilíneas son recorridos, no recintos |
 
 ---
 
-## Parámetros ajustables en el script
+## Sistema de confianza del resultado
 
-```python
-AREA_MIN_M2  = 0.5   # ignorar polilíneas más pequeñas que esto (m²)
-RADIO_BUSQ   = 15.0  # radio máximo para búsqueda de polilínea cercana (m)
-RADIO_3DFACE = 8.0   # radio para acumular 3DFACEs por texto (m)
-```
+Cada recinto detectado lleva un indicador de confianza:
+
+| Confianza | Método | Qué indica |
+|---|---|---|
+| `alta` | Polilínea cerrada con texto dentro | Área exacta del dibujo |
+| `media` | Polilínea reconstruida a partir de muros | Área calculada; posibles imprecisiones por huecos |
+| `baja` | Ray-casting (proyección de rayos) | Área estimada; puede ser incorrecta |
+
+Para trabajo de inventario o certificación de superficies, solo usar recintos con confianza `alta` o `media`.
 
 ---
 
-## Flujo de trabajo recomendado
+## Resumen rápido
 
-```bash
-# 1. Convertir DWG → DXF
-bash convert.sh
-
-# 2. Analizar un plano
-python3 inventario_superficies.py "data/dxf/MiPlano.dxf"
-
-# 3. Los resultados quedan en:
-#    data/dxf/MiPlano_inventario.json
-#    data/dxf/MiPlano_inventario.csv
-```
+1. **Mejor resultado**: polilínea cerrada por recinto + etiqueta dentro + capas de texto estándar.
+2. **Resultado aceptable**: muros como líneas continuas en una capa nombrada + etiquetas dentro del área.
+3. **Siempre**: incrustar XREFs, no partir etiquetas, no poner texto fuera del recinto.
+4. **Indicar** la convención de capas de la oficina si no es alguna de las listadas.
